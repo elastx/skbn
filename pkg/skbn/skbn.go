@@ -59,6 +59,7 @@ func TestImplementationsExist(srcPrefix, dstPrefix string) error {
 	case "k8s":
 	case "s3":
 	case "abs":
+	case "swift":
 	default:
 		return fmt.Errorf(dstPrefix + " not implemented")
 	}
@@ -177,6 +178,28 @@ func PerformCopy(srcClient, dstClient interface{}, srcPrefix, dstPrefix string, 
 	return nil
 }
 
+// CleanUp cleans backups folder
+func CleanUp(srcClient interface{}, fromToPaths []FromToPair) error {
+
+	// Execute in parallel
+	totalFiles := len(fromToPaths)
+	currentLine := 0
+	for _, ftp := range fromToPaths {
+		currentLine++
+
+		totalDigits := utils.CountDigits(totalFiles)
+		currentLinePadded := utils.LeftPad2Len(currentLine, 0, totalDigits)
+
+		log.Printf("[%s/%d] remove: k8://%s", currentLinePadded, totalFiles, ftp.FromPath)
+
+		err := Clean(srcClient, ftp.FromPath)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // GetListOfFiles gets relative paths from the provided path
 func GetListOfFiles(client interface{}, prefix, path string) ([]string, error) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -259,6 +282,11 @@ func Upload(dstClient interface{}, dstPrefix, dstPath, srcPath string, reader io
 		if err != nil {
 			return err
 		}
+	case "swift":
+		err := UploadToSwift(dstClient, dstPath, srcPath, reader)
+		if err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf(dstPrefix + " not implemented")
 	}
@@ -296,6 +324,17 @@ func initClient(ctx context.Context, existingClient interface{}, prefix, path, t
 			break
 		}
 		client, err := GetClientToAbs(ctx, path)
+		if err != nil {
+			return nil, "", err
+		}
+		newClient = client
+
+	case "swift":
+		if isTestedAndClientExists(prefix, tested, existingClient) {
+			newClient = existingClient
+			break
+		}
+		client, err := GetClientToSwift(path)
 		if err != nil {
 			return nil, "", err
 		}

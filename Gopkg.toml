@@ -1,4 +1,9 @@
 [[constraint]]
+  name = "github.com/nuvo/skbn"
+  source = "github.com/elastx/skbn"
+  branch = "master"
+
+[[constraint]]
   name = "github.com/Azure/azure-pipeline-go"
   version = "0.1.8"
 
@@ -9,6 +14,10 @@
 [[constraint]]
   name = "github.com/aws/aws-sdk-go"
   version = "1.16.7"
+
+[[constraint]]
+  name = "github.com/ncw/swift"
+  version = "1.0.44"
 
 [[constraint]]
   name = "github.com/djherbis/buffer"
