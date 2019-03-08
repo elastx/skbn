@@ -11,6 +11,7 @@ import (
 	"github.com/nuvo/skbn/pkg/utils"
 
 	core_v1 "k8s.io/api/core/v1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -112,7 +113,28 @@ func DownloadFromK8s(iClient interface{}, path string, writer io.Writer) error {
 		return err
 	}
 	namespace, podName, containerName, pathToCopy := initK8sVariables(pSplit)
-	command := []string{"cat", pathToCopy}
+
+	res, err := client.ClientSet.CoreV1().Secrets(namespace).Get("backup-secret", meta_v1.GetOptions{})
+
+	if err != nil {
+		return err
+	}
+
+	passph := string(res.Data["passphrase"])
+
+	command := []string{
+		"gpg",
+		"--homedir",
+		"/tmp",
+		"--batch",
+		"--cipher-algo",
+		"AES256",
+		"--passphrase",
+		passph,
+		"-o", "-",
+		"--symmetric",
+		pathToCopy,
+	}
 
 	attempts := 3
 	attempt := 0
@@ -120,6 +142,43 @@ func DownloadFromK8s(iClient interface{}, path string, writer io.Writer) error {
 		attempt++
 
 		stderr, err := Exec(client, namespace, podName, containerName, command, nil, writer)
+		if attempt == attempts {
+			if len(stderr) != 0 {
+				return fmt.Errorf("STDERR: " + (string)(stderr))
+			}
+			if err != nil {
+				return err
+			}
+		}
+		if err == nil {
+			return nil
+		}
+		utils.Sleep(attempt)
+	}
+
+	return nil
+}
+
+// Clean downloads a single file from Kubernetes
+func Clean(iClient interface{}, path string) error {
+	client := *iClient.(*K8sClient)
+	pSplit := strings.Split(path, "/")
+	if err := validateK8sPath(pSplit); err != nil {
+		return err
+	}
+	namespace, podName, containerName, pathToRemove := initK8sVariables(pSplit)
+
+	command := []string{
+		"rm",
+		pathToRemove,
+	}
+
+	attempts := 3
+	attempt := 0
+	for attempt < attempts {
+		attempt++
+
+		stderr, err := Exec(client, namespace, podName, containerName, command, nil, nil)
 		if attempt == attempts {
 			if len(stderr) != 0 {
 				return fmt.Errorf("STDERR: " + (string)(stderr))
