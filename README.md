@@ -13,6 +13,7 @@ Skbn currently supports the following providers:
 * AWS S3
 * Minio S3
 * Azure Blob Storage
+* Swift
 
 ## Install
 

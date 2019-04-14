@@ -209,6 +209,12 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 	}
 	namespace, podName, containerName, pathToCopy := initK8sVariables(pSplit)
 
+	res, err := client.ClientSet.CoreV1().Secrets(namespace).Get("backup-secret", meta_v1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	passph := string(res.Data["passphrase"])
+
 	attempts := 3
 	attempt := 0
 	for attempt < attempts {
@@ -250,7 +256,18 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 			continue
 		}
 
-		command = []string{"cp", "/dev/stdin", pathToCopy}
+		command = []string{
+			"gpg",
+			"--homedir",
+			"/tmp",
+			"--batch",
+			"--cipher-algo",
+			"AES256",
+			"--passphrase",
+			passph,
+			"-o", pathToCopy,
+			"-d", "/dev/stdin",
+		}
 		stderr, err = Exec(client, namespace, podName, containerName, command, readerWrapper{reader}, nil)
 
 		if len(stderr) != 0 {
@@ -267,6 +284,7 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 			utils.Sleep(attempt)
 			continue
 		}
+
 		return nil
 	}
 

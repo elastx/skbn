@@ -51,6 +51,7 @@ func TestImplementationsExist(srcPrefix, dstPrefix string) error {
 	case "k8s":
 	case "s3":
 	case "abs":
+	case "swift":
 	default:
 		return fmt.Errorf(srcPrefix + " not implemented")
 	}
@@ -251,6 +252,11 @@ func Download(srcClient interface{}, srcPrefix, srcPath string, writer io.Writer
 		}
 	case "abs":
 		err := DownloadFromAbs(ctx, srcClient, srcPath, writer)
+		if err != nil {
+			return err
+		}
+	case "swift":
+		err := DownloadFromSwift(srcClient, srcPath, writer)
 		if err != nil {
 			return err
 		}
