@@ -147,6 +147,11 @@ skbn cp \
     --dst abs://<account>/<container>/<path>
 ```
 
+### List files relative to path
+```
+skbn list --path swift://<container>/<path>
+```
+
 ## Credentials
 
 

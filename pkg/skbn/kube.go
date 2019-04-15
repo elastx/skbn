@@ -4,14 +4,18 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/nuvo/skbn/pkg/utils"
 
 	core_v1 "k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -114,26 +118,23 @@ func DownloadFromK8s(iClient interface{}, path string, writer io.Writer) error {
 	}
 	namespace, podName, containerName, pathToCopy := initK8sVariables(pSplit)
 
-	res, err := client.ClientSet.CoreV1().Secrets(namespace).Get("backup-secret", meta_v1.GetOptions{})
+	isToBeEncrypted, passphrase := isK8sCryptoEnabled(iClient, namespace)
 
-	if err != nil {
-		return err
-	}
-
-	passph := string(res.Data["passphrase"])
-
-	command := []string{
-		"gpg",
-		"--homedir",
-		"/tmp",
-		"--batch",
-		"--cipher-algo",
-		"AES256",
-		"--passphrase",
-		passph,
-		"-o", "-",
-		"--symmetric",
-		pathToCopy,
+	var command = []string{"cat", pathToCopy}
+	if isToBeEncrypted {
+		command = []string{
+			"gpg",
+			"--homedir",
+			"/tmp",
+			"--batch",
+			"--cipher-algo",
+			"AES256",
+			"--passphrase",
+			passphrase,
+			"-o", "-",
+			"--symmetric",
+			pathToCopy,
+		}
 	}
 
 	attempts := 3
@@ -209,17 +210,14 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 	}
 	namespace, podName, containerName, pathToCopy := initK8sVariables(pSplit)
 
-	res, err := client.ClientSet.CoreV1().Secrets(namespace).Get("backup-secret", meta_v1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	passph := string(res.Data["passphrase"])
+	isToBeEncrypted, passphrase := isK8sCryptoEnabled(iClient, namespace)
 
 	attempts := 3
 	attempt := 0
 	for attempt < attempts {
 		attempt++
-		dir, _ := filepath.Split(pathToCopy)
+		dir := filepath.Dir(pathToCopy)
+
 		command := []string{"mkdir", "-p", dir}
 		stderr, err := Exec(client, namespace, podName, containerName, command, nil, nil)
 
@@ -256,21 +254,22 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 			continue
 		}
 
-		command = []string{
-			"gpg",
-			"--homedir",
-			"/tmp",
-			"--batch",
-			"--cipher-algo",
-			"AES256",
-			"--passphrase",
-			passph,
-			"-o", pathToCopy,
-			"-d", "/dev/stdin",
+		command = []string{"cp", "/dev/stdin", pathToCopy}
+		if isToBeEncrypted {
+			command = []string{
+				"gpg",
+				"--homedir", "/tmp/bali3/.gnupg",
+				"--batch",
+				"--yes",
+				"--cipher-algo", "AES256",
+				"--passphrase", passphrase,
+				"--output", pathToCopy,
+				"--decrypt", "-",
+			}
 		}
 		stderr, err = Exec(client, namespace, podName, containerName, command, readerWrapper{reader}, nil)
 
-		if len(stderr) != 0 {
+		if len(stderr) != 0 && !isToBeEncrypted {
 			if attempt == attempts {
 				return fmt.Errorf("STDERR: " + (string)(stderr))
 			}
@@ -284,11 +283,17 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 			utils.Sleep(attempt)
 			continue
 		}
-
 		return nil
 	}
-
 	return nil
+}
+
+// Should files be en-/decrypted when transfered from/to K8s
+func isK8sCryptoEnabled(iClient interface{}, namespace string) (bool, string) {
+	client := *iClient.(*K8sClient)
+	// TODO Should consider some ENV to override the use of dis-/enable encryption
+	res, err := client.ClientSet.CoreV1().Secrets(namespace).Get("backup-secret", meta_v1.GetOptions{})
+	return err == nil, string(res.Data["passphrase"])
 }
 
 type readerWrapper struct {
@@ -301,45 +306,48 @@ func (r readerWrapper) Read(p []byte) (int, error) {
 
 // Exec executes a command in a given container
 func Exec(client K8sClient, namespace, podName, containerName string, command []string, stdin io.Reader, stdout io.Writer) ([]byte, error) {
-	clientset, config := client.ClientSet, client.Config
+	restClient := client.ClientSet.CoreV1().RESTClient()
 
-	req := clientset.Core().RESTClient().Post().
+	req := restClient.Post().
+		Namespace(namespace).
 		Resource("pods").
 		Name(podName).
-		Namespace(namespace).
-		SubResource("exec")
-	scheme := runtime.NewScheme()
-	if err := core_v1.AddToScheme(scheme); err != nil {
-		return nil, fmt.Errorf("error adding to scheme: %v", err)
+		SubResource("exec").
+		Param("container", containerName).
+		Param("stdin", strconv.FormatBool(stdin != nil)).
+		Param("stdout", strconv.FormatBool(stdout != nil)).
+		Param("stderr", "true")
+
+	for _, command := range command {
+		req.Param("command", command)
 	}
 
-	parameterCodec := runtime.NewParameterCodec(scheme)
-	req.VersionedParams(&core_v1.PodExecOptions{
-		Command:   command,
-		Container: containerName,
-		Stdin:     stdin != nil,
-		Stdout:    stdout != nil,
-		Stderr:    true,
-		TTY:       false,
-	}, parameterCodec)
-
-	exec, err := remotecommand.NewSPDYExecutor(config, "POST", req.URL())
+	executor, err := remotecommand.NewSPDYExecutor(client.Config, http.MethodPost, req.URL())
 	if err != nil {
 		return nil, fmt.Errorf("error while creating Executor: %v", err)
 	}
 
-	var stderr bytes.Buffer
-	err = exec.Stream(remotecommand.StreamOptions{
-		Stdin:  stdin,
-		Stdout: stdout,
-		Stderr: &stderr,
-		Tty:    false,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("error in Stream: %v", err)
+	if stdin != nil {
+		os.Stdout.Sync()
+	}
+	if stdout != nil {
+		os.Stderr.Sync()
 	}
 
-	return stderr.Bytes(), nil
+	var stderr bytes.Buffer
+	err = executor.Stream(remotecommand.StreamOptions{
+		Stdin:             stdin,
+		Stdout:            stdout,
+		Stderr:            &stderr,
+		Tty:               false,
+		TerminalSizeQueue: nil,
+	})
+
+	if err != nil {
+		return stderr.Bytes(), fmt.Errorf("error in Stream: %v", err)
+	}
+
+	return stderr.Bytes(), err
 }
 
 func validateK8sPath(pathSplit []string) error {

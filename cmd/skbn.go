@@ -29,6 +29,7 @@ func NewRootCmd(args []string) *cobra.Command {
 	out := cmd.OutOrStdout()
 
 	cmd.AddCommand(NewCpCmd(out))
+	cmd.AddCommand(NewListCmd())
 	cmd.AddCommand(NewVersionCmd(out))
 
 	return cmd
@@ -66,6 +67,33 @@ func NewCpCmd(out io.Writer) *cobra.Command {
 
 	cmd.MarkFlagRequired("src")
 	cmd.MarkFlagRequired("dst")
+
+	return cmd
+}
+
+type listCmd struct {
+	path string
+}
+
+// NewListCmd represents the copy command
+func NewListCmd() *cobra.Command {
+	c := &listCmd{}
+
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List files or directories in Kubernetes and Cloud storage",
+		Long:  ``,
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := skbn.List(c.path); err != nil {
+				log.Fatal(err)
+			}
+		},
+	}
+	f := cmd.Flags()
+
+	f.StringVar(&c.path, "path", "", "list files relative this path (recursive). Example: k8s://<namespace>/<podName>/<containerName>/path/to/list")
+
+	cmd.MarkFlagRequired("path")
 
 	return cmd
 }

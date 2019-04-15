@@ -3,12 +3,11 @@ package skbn
 import (
 	"context"
 	"fmt"
+	"github.com/nuvo/skbn/pkg/utils"
 	"io"
 	"log"
 	"math"
 	"path/filepath"
-
-	"github.com/nuvo/skbn/pkg/utils"
 
 	"github.com/djherbis/buffer"
 	"gopkg.in/djherbis/nio.v2"
@@ -45,6 +44,24 @@ func Copy(src, dst string, parallel int, bufferSize float64) error {
 	return nil
 }
 
+// List files recursively
+func List(path string) error {
+	srcPrefix, srcPath := utils.SplitInTwo(path, "://")
+
+	client, err := GetClient(srcPrefix, srcPath)
+	if err != nil {
+		return err
+	}
+	files, err := GetListOfFiles(client, srcPrefix, srcPath)
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		fmt.Println(file)
+	}
+	return nil
+}
+
 // TestImplementationsExist checks that implementations exist for the desired action
 func TestImplementationsExist(srcPrefix, dstPrefix string) error {
 	switch srcPrefix {
@@ -66,6 +83,19 @@ func TestImplementationsExist(srcPrefix, dstPrefix string) error {
 	}
 
 	return nil
+}
+
+//
+func GetClient(prefix, path string) (interface{}, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client, _, err := initClient(ctx, nil, prefix, path, "")
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
 }
 
 // GetClients gets the clients for the source and destination
@@ -176,6 +206,7 @@ func PerformCopy(srcClient, dstClient interface{}, srcPrefix, dstPrefix string, 
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -223,6 +254,12 @@ func GetListOfFiles(client interface{}, prefix, path string) ([]string, error) {
 		relativePaths = paths
 	case "abs":
 		paths, err := GetListOfFilesFromAbs(ctx, client, path)
+		if err != nil {
+			return nil, err
+		}
+		relativePaths = paths
+	case "swift":
+		paths, err := GetListOfFilesFromSwift(client, path)
 		if err != nil {
 			return nil, err
 		}

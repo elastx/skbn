@@ -1,6 +1,6 @@
 [[constraint]]
   name = "github.com/nuvo/skbn"
-  source = "github.com/elastx/skbn"
+  source = "github.com/anbarium/skbn"
   branch = "master"
 
 [[constraint]]
