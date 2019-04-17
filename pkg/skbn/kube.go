@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,10 +12,7 @@ import (
 
 	"github.com/nuvo/skbn/pkg/utils"
 
-	core_v1 "k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -344,10 +340,10 @@ func Exec(client K8sClient, namespace, podName, containerName string, command []
 	})
 
 	if err != nil {
-		return stderr.Bytes(), fmt.Errorf("error in Stream: %v", err)
+		return nil, fmt.Errorf("error in Stream: %v", err)
 	}
 
-	return stderr.Bytes(), err
+	return stderr.Bytes(), nil
 }
 
 func validateK8sPath(pathSplit []string) error {
