@@ -326,9 +326,7 @@ func Exec(client K8sClient, namespace, podName, containerName string, command []
 	if stdin != nil {
 		os.Stdout.Sync()
 	}
-	if stdout != nil {
-		os.Stderr.Sync()
-	}
+	os.Stderr.Sync()
 
 	var stderr bytes.Buffer
 	err = executor.Stream(remotecommand.StreamOptions{
