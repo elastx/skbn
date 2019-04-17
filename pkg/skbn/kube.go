@@ -210,7 +210,7 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 	}
 	namespace, podName, containerName, pathToCopy := initK8sVariables(pSplit)
 
-	isToBeDencrypted, passphrase := isK8sCryptoEnabled(iClient, namespace)
+	isToBeDecrypted, passphrase := isK8sCryptoEnabled(iClient, namespace)
 
 	attempts := 3
 	attempt := 0
@@ -255,7 +255,7 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 		}
 
 		command = []string{"cp", "/dev/stdin", pathToCopy}
-		if isToBeDencrypted {
+		if isToBeDecrypted {
 			command = []string{
 				"gpg",
 				"--homedir", "/tmp/bali3/.gnupg",
@@ -269,7 +269,7 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 		}
 		stderr, err = Exec(client, namespace, podName, containerName, command, readerWrapper{reader}, nil)
 
-		if len(stderr) != 0 && !isToBeDencrypted {
+		if len(stderr) != 0 && !isToBeDecrypted {
 			if attempt == attempts {
 				return fmt.Errorf("STDERR: " + (string)(stderr))
 			}
