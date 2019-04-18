@@ -211,6 +211,7 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 
 	attempts := 3
 	attempt := 0
+	retryWithoutDecryption := false
 	for attempt < attempts {
 		attempt++
 		dir := filepath.Dir(pathToCopy)
@@ -252,7 +253,7 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 		}
 
 		command = []string{"cp", "/dev/stdin", pathToCopy}
-		if isToBeDecrypted {
+		if isToBeDecrypted && !retryWithoutDecryption {
 			command = []string{
 				"gpg",
 				"--homedir", "/tmp",
@@ -271,6 +272,18 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 				return fmt.Errorf("STDERR: " + (string)(stderr))
 			}
 			utils.Sleep(attempt)
+			continue
+		}
+		if len(stderr) != 0 &&
+			isToBeDecrypted &&
+			!retryWithoutDecryption &&
+			strings.Contains((string)(stderr), "gpg: no valid OpenPGP data found.") {
+			// Perform a retry without decryption (if this attempt was made with decryption)
+			// Don't count this attempt
+			attempt--
+			// And all re-attempts should be made without decryption
+			retryWithoutDecryption = true
+			log.Printf("Retry to upload to K8s without decryption")
 			continue
 		}
 		if err != nil {
@@ -339,8 +352,7 @@ func Exec(client K8sClient, namespace, podName, containerName string, command []
 	})
 
 	if err != nil {
-		log.Printf("The command %s failed.\n%s", command, (string)(stderr.Bytes()))
-		return nil, fmt.Errorf("error in Stream: %v", err)
+		return stderr.Bytes(), fmt.Errorf("error in Stream: %v", err)
 	}
 
 	return stderr.Bytes(), nil
