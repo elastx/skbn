@@ -209,69 +209,70 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 
 	isToBeDecrypted, passphrase := isK8sCryptoEnabled(iClient, namespace)
 
-	attempts := 3
-	attempt := 0
-	for attempt < attempts {
-		attempt++
-		dir := filepath.Dir(pathToCopy)
+	// Do nothing if the path exists and is a directory
+	if !isRemoteDir(iClient, namespace, podName, containerName, pathToCopy) {
 
-		command := []string{"mkdir", "-p", dir}
-		stderr, err := Exec(client, namespace, podName, containerName, command, nil, nil)
+		attempts := 3
+		attempt := 0
+		for attempt < attempts {
+			attempt++
+			dir := filepath.Dir(pathToCopy)
 
-		if len(stderr) != 0 {
-			if attempt == attempts {
-				return fmt.Errorf("STDERR: " + (string)(stderr))
+			command := []string{"mkdir", "-p", dir}
+			stderr, err := Exec(client, namespace, podName, containerName, command, nil, nil)
+
+			if len(stderr) != 0 {
+				if attempt == attempts {
+					return fmt.Errorf("STDERR: " + (string)(stderr))
+				}
+				utils.Sleep(attempt)
+				continue
 			}
-			utils.Sleep(attempt)
-			continue
-		}
-		if err != nil {
-			if attempt == attempts {
-				return err
+			if err != nil {
+				if attempt == attempts {
+					return err
+				}
+				utils.Sleep(attempt)
+				continue
 			}
-			utils.Sleep(attempt)
-			continue
-		}
 
-		command = []string{"touch", pathToCopy}
-		stderr, err = Exec(client, namespace, podName, containerName, command, nil, nil)
+			command = []string{"touch", pathToCopy}
+			stderr, err = Exec(client, namespace, podName, containerName, command, nil, nil)
 
-		if len(stderr) != 0 {
-			if attempt == attempts {
-				return fmt.Errorf("STDERR: " + (string)(stderr))
+			if len(stderr) != 0 {
+				if attempt == attempts {
+					return fmt.Errorf("STDERR: " + (string)(stderr))
+				}
+				utils.Sleep(attempt)
+				continue
 			}
-			utils.Sleep(attempt)
-			continue
-		}
-		if err != nil {
-			if attempt == attempts {
-				return err
+			if err != nil {
+				if attempt == attempts {
+					return err
+				}
+				utils.Sleep(attempt)
+				continue
 			}
-			utils.Sleep(attempt)
-			continue
-		}
 
-		command = []string{"cp", "/dev/stdin", pathToCopy}
-		stderr, err = Exec(client, namespace, podName, containerName, command, readerWrapper{reader}, nil)
+			command = []string{"cp", "/dev/stdin", pathToCopy}
+			stderr, err = Exec(client, namespace, podName, containerName, command, readerWrapper{reader}, nil)
 
-		if len(stderr) != 0 {
-			if attempt == attempts {
-				return fmt.Errorf("STDERR: " + (string)(stderr))
+			if len(stderr) != 0 {
+				if attempt == attempts {
+					return fmt.Errorf("STDERR: " + (string)(stderr))
+				}
+				utils.Sleep(attempt)
+				continue
 			}
-			utils.Sleep(attempt)
-			continue
-		}
-		if err != nil {
-			if attempt == attempts {
-				return err
+			if err != nil {
+				if attempt == attempts {
+					return err
+				}
+				utils.Sleep(attempt)
+				continue
 			}
-			utils.Sleep(attempt)
-			continue
-		}
 
-		if isToBeDecrypted {
-			// Don't decrypt directories (only files)
-			if stat, err := os.Stat(pathToCopy); !(err == nil && stat.IsDir()) {
+			if isToBeDecrypted {
 				log.Printf("Decrypting file: %s", pathToCopy)
 				command = []string{
 					"gpg",
@@ -301,9 +302,9 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 					continue
 				}
 			}
-		}
 
-		return nil
+			return nil
+		}
 	}
 	return nil
 }
@@ -314,6 +315,24 @@ func isK8sCryptoEnabled(iClient interface{}, namespace string) (bool, string) {
 	// TODO Should consider some ENV to override the use of dis-/enable encryption
 	res, err := client.ClientSet.CoreV1().Secrets(namespace).Get("backup-secret", meta_v1.GetOptions{})
 	return err == nil, string(res.Data["passphrase"])
+}
+
+func isRemoteDir(iClient interface{}, namespace, podName, containerName, path string) bool {
+	client := *iClient.(*K8sClient)
+	attempts := 3
+	attempt := 0
+	for attempt < attempts {
+		attempt++
+		command := []string{"test", "-d", path}
+		_, err := Exec(client, namespace, podName, containerName, command, nil, nil)
+		if err != nil {
+			if attempt == attempts {
+				return false
+			}
+			utils.Sleep(attempt)
+		}
+	}
+	return true
 }
 
 type readerWrapper struct {
