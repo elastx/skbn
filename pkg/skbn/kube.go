@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -338,6 +339,7 @@ func Exec(client K8sClient, namespace, podName, containerName string, command []
 	})
 
 	if err != nil {
+		log.Printf("The command %s failed.\n%s", command, (string)(stderr.Bytes()))
 		return nil, fmt.Errorf("error in Stream: %v", err)
 	}
 
