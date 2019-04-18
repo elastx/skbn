@@ -211,7 +211,6 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 
 	attempts := 3
 	attempt := 0
-	retryWithoutDecryption := false
 	for attempt < attempts {
 		attempt++
 		dir := filepath.Dir(pathToCopy)
@@ -253,37 +252,13 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 		}
 
 		command = []string{"cp", "/dev/stdin", pathToCopy}
-		if isToBeDecrypted && !retryWithoutDecryption {
-			command = []string{
-				"gpg",
-				"--homedir", "/tmp",
-				"--batch",
-				"--yes",
-				"--cipher-algo", "AES256",
-				"--passphrase", passphrase,
-				"--output", pathToCopy,
-				"--decrypt", "-",
-			}
-		}
 		stderr, err = Exec(client, namespace, podName, containerName, command, readerWrapper{reader}, nil)
 
-		if len(stderr) != 0 && !isToBeDecrypted {
+		if len(stderr) != 0 {
 			if attempt == attempts {
 				return fmt.Errorf("STDERR: " + (string)(stderr))
 			}
 			utils.Sleep(attempt)
-			continue
-		}
-		if len(stderr) != 0 &&
-			isToBeDecrypted &&
-			!retryWithoutDecryption &&
-			strings.Contains((string)(stderr), "gpg: no valid OpenPGP data found.") {
-			// Perform a retry without decryption (if this attempt was made with decryption)
-			// Don't count this attempt
-			attempt--
-			// And all re-attempts should be made without decryption
-			retryWithoutDecryption = true
-			log.Printf("Retry to upload to K8s without decryption")
 			continue
 		}
 		if err != nil {
@@ -293,6 +268,41 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 			utils.Sleep(attempt)
 			continue
 		}
+
+		if isToBeDecrypted {
+			// Don't decrypt directories (only files)
+			if stat, err := os.Stat(pathToCopy); !(err == nil && stat.IsDir()) {
+				log.Printf("Decrypting file: %s", pathToCopy)
+				command = []string{
+					"gpg",
+					"--homedir", "/tmp",
+					"--batch",
+					"--yes",
+					"--cipher-algo", "AES256",
+					"--passphrase", passphrase,
+					"--output", pathToCopy + "_gpgdec",
+					"--decrypt", pathToCopy,
+				}
+				stderr, err = Exec(client, namespace, podName, containerName, command, nil, nil)
+				notEncrypted := len(stderr) != 0 && strings.Contains((string)(stderr), "gpg: no valid OpenPGP data found.")
+				if notEncrypted {
+					log.Printf("WARN: Failed to decrypt a file during upload, may not be encrypted, hence ok.")
+					// We leave the uploaded file as is
+				} else {
+					command = []string{"mv", pathToCopy + "_gpgdec", pathToCopy}
+					stderr, err = Exec(client, namespace, podName, containerName, command, nil, nil)
+				}
+
+				if !notEncrypted && err != nil {
+					if attempt == attempts {
+						return err
+					}
+					utils.Sleep(attempt)
+					continue
+				}
+			}
+		}
+
 		return nil
 	}
 	return nil
