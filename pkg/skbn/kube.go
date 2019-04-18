@@ -255,7 +255,7 @@ func UploadToK8s(iClient interface{}, toPath, fromPath string, reader io.Reader)
 		if isToBeDecrypted {
 			command = []string{
 				"gpg",
-				"--homedir", "/tmp/bali3/.gnupg",
+				"--homedir", "/tmp",
 				"--batch",
 				"--yes",
 				"--cipher-algo", "AES256",
