@@ -13,6 +13,7 @@ Skbn currently supports the following providers:
 * AWS S3
 * Minio S3
 * Azure Blob Storage
+* Swift
 
 ## Install
 
@@ -144,6 +145,11 @@ skbn cp \
 skbn cp \
     --src abs://<account>/<container>/<path> \
     --dst abs://<account>/<container>/<path>
+```
+
+### List files relative to path
+```
+skbn list --path swift://<container>/<path>
 ```
 
 ## Credentials

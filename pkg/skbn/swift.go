@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/ncw/swift"
+	"github.com/nuvo/skbn/pkg/utils"
 )
 
 // GetClientToSwift authenticates to swift and returns client
@@ -36,6 +37,71 @@ func GetClientToSwift(path string) (*swift.Connection, error) {
 	}
 
 	return c, nil
+}
+
+// GetListOfFilesFromSwift gets list of files in path from Swift (recursive)
+func GetListOfFilesFromSwift(iClient interface{}, path string) ([]string, error) {
+	conn := iClient.(*swift.Connection)
+
+	pSplit := strings.Split(path, "/")
+	if err := validateSwiftPath(pSplit); err != nil {
+		return nil, err
+	}
+
+	attempts := 3
+	attempt := 0
+	for attempt < attempts {
+		attempt++
+
+		container, swiftPath := initSwiftVariables(pSplit)
+
+		lines, err := conn.ObjectNamesAll(container, &swift.ObjectsOpts{Prefix: swiftPath})
+		var outLines []string
+		if err != nil {
+			if attempt == attempts {
+				return nil, err
+			}
+			utils.Sleep(attempt)
+			continue
+		}
+		for _, line := range lines {
+			if line != "" {
+				outLines = append(outLines, strings.Replace(line, swiftPath, "", 1))
+			}
+		}
+
+		return outLines, nil
+	}
+	return nil, nil
+}
+
+// DownloadFromSwift downloads a single file from Swift
+func DownloadFromSwift(iClient interface{}, path string, writer io.Writer) error {
+	conn := iClient.(*swift.Connection)
+
+	pSplit := strings.Split(path, "/")
+	if err := validateSwiftPath(pSplit); err != nil {
+		return err
+	}
+
+	attempts := 3
+	attempt := 0
+	for attempt < attempts {
+		attempt++
+
+		container, swiftPath := initSwiftVariables(pSplit)
+
+		_, err := conn.ObjectGet(container, swiftPath, writer, true, nil)
+		if err != nil {
+			if attempt == attempts {
+				return err
+			}
+			utils.Sleep(attempt)
+			continue
+		}
+		return nil
+	}
+	return nil
 }
 
 // UploadToSwift uploads a single file to Swift Storage

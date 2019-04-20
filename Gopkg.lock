@@ -206,18 +206,6 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:0afbbd82a14657dbe53e816648bd4e76e8267b9bac030851500055baca6f90c5"
-  name = "github.com/nuvo/skbn"
-  packages = [
-    "pkg/skbn",
-    "pkg/utils",
-  ]
-  pruneopts = "UT"
-  revision = "f3f8aee53f67faa4d0337f7fd2406d5f265bb4f3"
-  source = "github.com/elastx/skbn"
-
-[[projects]]
-  branch = "master"
   digest = "1:3bf17a6e6eaa6ad24152148a631d18662f7212e21637c2699bff3369b7f00fa2"
   name = "github.com/petar/GoLLRB"
   packages = ["llrb"]
@@ -548,8 +536,6 @@
     "github.com/aws/aws-sdk-go/service/s3/s3manager",
     "github.com/djherbis/buffer",
     "github.com/ncw/swift",
-    "github.com/nuvo/skbn/pkg/skbn",
-    "github.com/nuvo/skbn/pkg/utils",
     "github.com/spf13/cobra",
     "gopkg.in/djherbis/nio.v2",
     "k8s.io/api/core/v1",

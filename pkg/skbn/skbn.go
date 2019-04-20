@@ -3,12 +3,11 @@ package skbn
 import (
 	"context"
 	"fmt"
+	"github.com/nuvo/skbn/pkg/utils"
 	"io"
 	"log"
 	"math"
 	"path/filepath"
-
-	"github.com/nuvo/skbn/pkg/utils"
 
 	"github.com/djherbis/buffer"
 	"gopkg.in/djherbis/nio.v2"
@@ -45,12 +44,31 @@ func Copy(src, dst string, parallel int, bufferSize float64) error {
 	return nil
 }
 
+// List files recursively
+func List(path string) error {
+	srcPrefix, srcPath := utils.SplitInTwo(path, "://")
+
+	client, err := GetClient(srcPrefix, srcPath)
+	if err != nil {
+		return err
+	}
+	files, err := GetListOfFiles(client, srcPrefix, srcPath)
+	if err != nil {
+		return err
+	}
+	for _, file := range files {
+		fmt.Println(file)
+	}
+	return nil
+}
+
 // TestImplementationsExist checks that implementations exist for the desired action
 func TestImplementationsExist(srcPrefix, dstPrefix string) error {
 	switch srcPrefix {
 	case "k8s":
 	case "s3":
 	case "abs":
+	case "swift":
 	default:
 		return fmt.Errorf(srcPrefix + " not implemented")
 	}
@@ -65,6 +83,19 @@ func TestImplementationsExist(srcPrefix, dstPrefix string) error {
 	}
 
 	return nil
+}
+
+//
+func GetClient(prefix, path string) (interface{}, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	client, _, err := initClient(ctx, nil, prefix, path, "")
+	if err != nil {
+		return nil, err
+	}
+
+	return client, nil
 }
 
 // GetClients gets the clients for the source and destination
@@ -175,6 +206,7 @@ func PerformCopy(srcClient, dstClient interface{}, srcPrefix, dstPrefix string, 
 			return err
 		}
 	}
+
 	return nil
 }
 
@@ -226,6 +258,12 @@ func GetListOfFiles(client interface{}, prefix, path string) ([]string, error) {
 			return nil, err
 		}
 		relativePaths = paths
+	case "swift":
+		paths, err := GetListOfFilesFromSwift(client, path)
+		if err != nil {
+			return nil, err
+		}
+		relativePaths = paths
 	default:
 		return nil, fmt.Errorf(prefix + " not implemented")
 	}
@@ -251,6 +289,11 @@ func Download(srcClient interface{}, srcPrefix, srcPath string, writer io.Writer
 		}
 	case "abs":
 		err := DownloadFromAbs(ctx, srcClient, srcPath, writer)
+		if err != nil {
+			return err
+		}
+	case "swift":
+		err := DownloadFromSwift(srcClient, srcPath, writer)
 		if err != nil {
 			return err
 		}
